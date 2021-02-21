@@ -9,8 +9,9 @@ cmake_minimum_required(VERSION 2.6 FATAL_ERROR)
 project(fractal)
 
 find_package(CUDA REQUIRED)
-
-
+find_package(OpenGL REQUIRED)
+find_package(GLUT REQUIRED)
+include_directories( ${OPENGL_INCLUDE_DIRS}  ${GLUT_INCLUDE_DIRS} )
 set (EXECUTABLE_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/bin/")
 
 if(CUDA_FOUND)
@@ -43,6 +44,7 @@ if(CUDA_FOUND)
 #    SET (HW2_files main.cpp reference_calc.cpp compare.cpp)
 
     CUDA_ADD_EXECUTABLE(cudaFractal cudaFractal.cu ${hdr} ${cu})
+    target_link_libraries(cudaFractal ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} )
 else(CUDA_FOUND)
     message("CUDA is not installed on this system.")
 endif()

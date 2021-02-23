@@ -53,16 +53,28 @@ __global__ void fractal(vec3 *output, dim3 dimens, vec3 imDims, vec3 imEdges, in
     int x = blockIdx.x*blockDim.x + threadIdx.x; //you do NOT need the grid size to calculate the thread pos within the grid!!!
     int y = blockIdx.y*blockDim.y + threadIdx.y;
     if(x >= dimens.x || y >= dimens.y) {
-//        output[y*dimens.y + x].x = -5; //not a good check: pixels not on the last row  will print -5 inside next row's elements
+//        output[y*dimens.y + x].x = -5; //not a good check: pixels not on the last row will print -5 inside next row's elements
         return;
     } //fixed: don't forget this, extra thread will do naughty things!
     // But you only hear about it once you try to copy the memory back to the host
     thrust::complex<float> c(dims(x,dimens.x,imDims.x,imEdges.x), //returns INT_MAX
                              dims(y,dimens.y,imDims.y,imEdges.y)); //returns 0
     vec3 result = fractalCalculator(c, iterLimit);
-    output[y*dimens.x + x].x = 0.0; //fixed from y*dimens.y to y*dimens.x (row width, not column height)
-    output[y*dimens.x + x].y = result.y/5.0;
-    output[y*dimens.x + x].z = result.x/static_cast<float>(iterLimit);
+
+    if(result.x < iterLimit) { //if we are not in the converged region then give the tentacles nice colors
+        uint8_t temp = result.y/5*7;
+        output[y*dimens.x + x].x = (temp & 0x1) ? result.y/5.0f : 0.0f;
+        output[y * dimens.x + x].y = (temp & 0x4) ? result.y/5.0f : 0.0f;
+        output[y * dimens.x + x].z = (temp & 0x2) ? result.y/5.0f : 0.0f;
+    } else {
+        output[y*dimens.x + x].x = 0.0f; //fixed from y*dimens.y to y*dimens.x (row width, not column height)
+        output[y * dimens.x + x].y = 0.0f;
+        output[y * dimens.x + x].z = 0.0f;
+    }
+
+    //output[y * dimens.x + x].y = result.y / 5.0f; //for green tentacles
+    //output[y * dimens.x + x].z = result.x / static_cast<float>(iterLimit); //for blue mandlebrot
+    //(result.x == iterLimit) ? 1.0f : 0.0f; //ghostly blue outline of mandlebrot
 }
 
 void sayError() {
@@ -189,9 +201,6 @@ int main (int argc, char *argv[])  {
 
     cudaMalloc(&d_output,width*height*sizeof(vec3));
     h_output = new vec3[width*height];
-    for(int i = 0; i < width*height; i++) {
-        h_output[i] = vec3{.x=-1, .y=-1, .z=-1};
-    }
 
     runKernel();
     glutKeyboardFunc(keyboard);

@@ -31,10 +31,29 @@ void renderLoop();
 void runKernel();
 void keyboard(unsigned char key, int x, int y);
 
-__device__ vec3 fractalCalculator(thrust::complex<float> c, int iterLimit) {
+__device__ vec3 mandlebrot(thrust::complex<float> c, int iterLimit) {
     thrust::complex<float> z(0, 0);
     int i = 0;
-    do { z = z*z + c; } while(thrust::abs(z) < 2.0 && ++i <= iterLimit);
+    if((256*powf(thrust::abs(c),4)-96*powf(thrust::abs(c),2)+32*c.real()-3 >= 0)
+        && (16*powf(thrust::abs(c+1),2)-1 >= 0)) { //the given value of 4 was too big for me
+        //detect and skip mandlebrot manlets
+        //https://iquilezles.org/www/articles/mset_1bulb/mset1bulb.htm
+        //https://iquilezles.org/www/articles/mset_2bulb/mset2bulb.htm
+        do { z = z * z + c; } while (thrust::abs(z) < 2.0 && ++i <= iterLimit);
+    } else { i = iterLimit; }
+    vec3 returnValue;
+    returnValue.x = static_cast<float>(i);
+    returnValue.y = thrust::abs(z);
+    returnValue.z = thrust::arg(z);
+    return returnValue;
+}
+
+__device__ vec3 julia(thrust::complex<float> z, int iterLimit) {
+    thrust::complex<float> c(0.26f, 0.0015f);
+    int i = 0;
+    do { z = z*z + c; } while(z.real() < 2 && z.real() > -2
+                                && z.imag() < 2 && z.imag() > -2
+                                && ++i <= iterLimit);
     vec3 returnValue;
     returnValue.x = static_cast<float>(i);
     returnValue.y = thrust::abs(z);
@@ -57,24 +76,26 @@ __global__ void fractal(vec3 *output, dim3 dimens, vec3 imDims, vec3 imEdges, in
         return;
     } //fixed: don't forget this, extra thread will do naughty things!
     // But you only hear about it once you try to copy the memory back to the host
-    thrust::complex<float> c(dims(x,dimens.x,imDims.x,imEdges.x), //returns INT_MAX
+    thrust::complex<float> pixel(dims(x,dimens.x,imDims.x,imEdges.x), //returns INT_MAX
                              dims(y,dimens.y,imDims.y,imEdges.y)); //returns 0
-    vec3 result = fractalCalculator(c, iterLimit);
+//    vec3 result = mandlebrot(pixel, iterLimit);
+    vec3 result = julia(pixel, iterLimit);
 
-    if(result.x < iterLimit) { //if we are not in the converged region then give the tentacles nice colors
-        uint8_t temp = result.y/5*7;
-        output[y*dimens.x + x].x = (temp & 0x1) ? result.y/5.0f : 0.0f;
-        output[y * dimens.x + x].y = (temp & 0x4) ? result.y/5.0f : 0.0f;
-        output[y * dimens.x + x].z = (temp & 0x2) ? result.y/5.0f : 0.0f;
-    } else {
-        output[y*dimens.x + x].x = 0.0f; //fixed from y*dimens.y to y*dimens.x (row width, not column height)
-        output[y * dimens.x + x].y = 0.0f;
-        output[y * dimens.x + x].z = 0.0f;
-    }
-
-    //output[y * dimens.x + x].y = result.y / 5.0f; //for green tentacles
-    //output[y * dimens.x + x].z = result.x / static_cast<float>(iterLimit); //for blue mandlebrot
-    //(result.x == iterLimit) ? 1.0f : 0.0f; //ghostly blue outline of mandlebrot
+//    if(result.x < iterLimit) { //if we are not in the converged region then give the tentacles nice colors
+//        uint8_t temp = result.y/5*7;
+//        output[y*dimens.x + x].x = (temp & 0x1) ? result.y/5.0f : 0.0f;
+//        output[y * dimens.x + x].y = (temp & 0x4) ? result.y/5.0f : 0.0f;
+//        output[y * dimens.x + x].z = (temp & 0x2) ? result.y/5.0f : 0.0f;
+//    } else {
+//        output[y*dimens.x + x].x = 0.0f; //fixed from y*dimens.y to y*dimens.x (row width, not column height)
+//        output[y * dimens.x + x].y = 0.0f;
+//        output[y * dimens.x + x].z = 0.0f;
+//    }
+    output[y*dimens.x + x].x = result.x / static_cast<float>(iterLimit);
+//    output[y * dimens.x + x].y = result.y / 5.0f; //for green tentacles
+    output[y * dimens.x + x].y = 0.0f;
+    output[y * dimens.x + x].z = 0.0f;
+    //(result.x == iterLimit) ? 1.0f : 0.0f; //ghostly blue outline
 }
 
 void sayError() {
@@ -93,7 +114,6 @@ void renderLoop() {
 }
 
 void runKernel() {
-//    cout << "Running kernel..." << endl;
     dim3 blockSize(threadDim, threadDim, 1);
     dim3 gridSize(width/threadDim + 1, height/threadDim + 1, 1);
     dim3 dimsVar = dim3(width,height);
@@ -108,62 +128,48 @@ void keyboard(unsigned char key, int x, int y) {
     switch (key) {
         case 97:
             imEdgeX -= imWidth*.01;
-//            cout << "Left: imEdgeX is now " << imEdgeX << endl;
             break;
         case 100:
             imEdgeX += imWidth*.01;
-//            cout << "Right: imEdgeX is now " << imEdgeX << endl;
             break;
         case 119:
             imEdgeY += imHeight*.01;
-//            cout << "Up: imEdgeY is now " << imEdgeY << endl;
             break;
         case 115:
             imEdgeY -= imHeight*.01;
-//            cout << "Down: imEdgeY is now " << imEdgeY << endl;
             break;
         case 65:
             imEdgeX -= imWidth*.1;
-//            cout << "Super left: imEdgeX is now " << imEdgeX << endl;
             break;
         case 68:
             imEdgeX += imWidth*.1;
-//            cout << "Super right: imEdgeX is now " << imEdgeX << endl;
             break;
         case 87:
             imEdgeY += imHeight*.1;
-//            cout << "Super up: imEdgeY is now " << imEdgeY << endl;
             break;
         case 83:
             imEdgeY -= imHeight*.1;
-//            cout << "Super down: imEdgeY is now " << imEdgeY << endl;
             break;
         case 102: //f
             imWidth /= 1.2;
             imHeight /= 1.2;
-//            cout << "Focusing in: imWidth is now " << imWidth << endl;
             break;
         case 118: //v
             imWidth *= 1.2;
             imHeight *= 1.2;
-//            cout << "Focusing out: imWidth is now " << imWidth << endl;
             break;
         case 70: //f
             imWidth /= 2;
             imHeight /= 2;
-//            cout << "Super focusing in: imWidth is now " << imWidth << endl;
             break;
         case 86: //v
             imWidth *= 2;
             imHeight *= 2;
-//            cout << "Super focusing out: imWidth is now " << imWidth << endl;
             break;
         case 113: //press q to quit
             glutDestroyWindow(glutGetWindow());
             return;
-            break;
         default:
-//            cout << "Default key case" << endl;
             break;
     }
     runKernel();
